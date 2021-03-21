@@ -1,0 +1,162 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Starting with a \#tidytuesday data set from back in 2019 <https://github.com/rfordatascience/tidytuesday/tree/master/data/2019/2019-05-21>
+
+<https://ourworldindata.org/plastic-pollution>
+
+```{r, echo=FALSE}
+library(tidyverse)
+library(rstanarm)
+library(janitor)
+```
+
+```{r}
+theme_set(theme_light())
+```
+
+```{r}
+coast_vs_waste <- read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-05-21/coastal-population-vs-mismanaged-plastic.csv") %>% 
+  clean_names() %>% 
+  rename(country = entity,
+         country_code = code)
+
+mismanaged_vs_gdp <- read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-05-21/per-capita-mismanaged-plastic-waste-vs-gdp-per-capita.csv") %>% 
+  clean_names() %>% 
+  rename(country = entity,
+         country_code = code,
+         mismanaged_plastic_per_cap = per_capita_mismanaged_plastic_waste_kilograms_per_person_per_day)
+
+waste_vs_gdp <- read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-05-21/per-capita-plastic-waste-vs-gdp-per-capita.csv") %>% 
+  clean_names() %>% 
+  rename(country = entity,
+         country_code = code, 
+         gdp_per_cap = gdp_per_capita_ppp_constant_2011_international_constant_2011_international,
+         plastic_waste_per_cap = per_capita_plastic_waste_kilograms_per_person_per_day)
+
+coast_vs_waste
+mismanaged_vs_gdp
+waste_vs_gdp
+```
+
+From: <https://datahelpdesk.worldbank.org/knowledgebase/articles/906519-world-bank-country-and-lending-groups>
+
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "For operational and analytical purposes, economies are divided among income groups according to 2019 gross national income (GNI) per capita, calculated using the World Bank Atlas method. The groups are: low income, \$1,035 or less; lower middle income, \$1,036 - 4,045; upper middle income, \$4,046 - 12,535; and high income, \$12,536 or more. The effective operational cutoff for IDA eligibility is \$1,185 or less." |
++====================================================================================================================================================================================================================================================================================================================================================================================================================================+
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+
+```{r}
+income_groups <- c('Low income', 'Lower middle income',
+                   'Upper middle income', 'High income')
+
+country_by_inc_group <- readxl::read_xls('./data/CLASS.xls', sheet = 'Groups') %>% 
+  clean_names() %>% 
+  filter(group_name %in% income_groups) %>% 
+  rename(inc_group = group_name,
+         inc_group_code = group_code)
+
+country_by_inc_group
+
+```
+
+`waste_vs_gdp` **missing data**:
+
+-   So, in the `waste_vs_gdp` dataset there are some non country entities (i.e. groups of countries such as world bank high income countries) which don't have country codes.
+
+-   There is very little data `plastic_waste_per_cap` (values are missing from more than 99% of rows ). I assume this is due to data only being collected on this relatively recently and the dataset covering the time period from 1800 onwards.
+
+-   Similarly there are many missing values for `gdp_per_cap` (values are missing from more than 70% of rows). Again I'll assume this is a data collection issue.
+
+`country_by_inc_group` **missing data**:
+
+-   all rows are present.
+
+joining the two dataset (`waste_vs_gdp` and `country_by_inc_group` ) **missing data:**
+
+-   there is a small number of countries where an income group can't be found. These look to be small islands that are part of larger countries (e.g. Jersey). So I'm happy that the `country_code` variables in both datasets match up reasonably well.
+
+```{r}
+# look at missing data for waste_vs_gdp
+waste_vs_gdp %>% 
+  visdat::vis_miss()
+
+waste_vs_gdp %>% 
+  filter(is.na(country_code)) %>% 
+  distinct(country)
+
+# look at missing data for country_by_inc_group
+country_by_inc_group %>% 
+  visdat::vis_miss()
+
+# look at missing data for waste_vs_gdp joined with country_by_inc_group
+waste_vs_gdp_inc <- waste_vs_gdp %>%
+  filter(!is.na(country_code)) %>% 
+  left_join(country_by_inc_group, by = c("country_code" = "country_code")) %>% 
+  select(-country_name)
+
+waste_vs_gdp_inc %>%
+  visdat::vis_miss()
+
+waste_vs_gdp_inc %>% 
+  distinct(country, country_code, inc_group) %>% 
+  filter(is.na(inc_group))
+```
+
+So, the only year that data is available on plastic waste per capita is 2010
+
+```{r}
+waste_vs_gdp_inc %>% 
+  filter(!is.na(plastic_waste_per_cap)) %>% 
+  distinct(year)
+
+waste_vs_gdp_inc <- waste_vs_gdp_inc %>% 
+  filter(!is.na(plastic_waste_per_cap)) %>% 
+  
+  mutate(plastic_waste_tot = plastic_waste_per_cap * 
+           total_population_gapminder) 
+
+waste_vs_gdp_inc %>% 
+  
+  ggplot(aes(gdp_per_cap, plastic_waste_per_cap,
+             size = total_population_gapminder,
+             colour = plastic_waste_tot)) +
+  geom_point() +
+  scale_x_log10() + scale_y_log10() +
+  scale_colour_viridis_c(option = 'magma')
+```
+
+```{r}
+waste_vs_gdp_inc <- waste_vs_gdp_inc %>% 
+  left_join(mismanaged_vs_gdp %>% 
+              select(country_code, year,
+                     mismanaged_plastic_per_cap)) %>% 
+  
+  mutate(plastic_waste_tot = plastic_waste_per_cap * 
+           total_population_gapminder,
+         misman_plastic_waste_tot = mismanaged_plastic_per_cap *
+           total_population_gapminder,
+         prop_plastic_waste_misman = misman_plastic_waste_tot / 
+           plastic_waste_tot) 
+
+waste_vs_gdp_inc %>% 
+  
+  ggplot(aes(gdp_per_cap, prop_plastic_waste_misman,
+             size = plastic_waste_tot,
+             alpha = plastic_waste_tot,
+             fill = log(total_population_gapminder))) +
+  geom_point(shape = 21) +
+  scale_x_log10(labels = scales::comma) +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_viridis_c(option = 'magma', direction = -1) +
+  scale_alpha(range = c(0.5, 0.8))
+
+
+waste_vs_gdp_inc %>% 
+  ggplot(aes(plastic_waste_tot)) +
+  geom_density() +
+  scale_x_log10()
+  
+```
