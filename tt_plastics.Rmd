@@ -18,35 +18,28 @@ theme_set(theme_light())
 ```
 
 ```{r}
-coast_vs_waste <- read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-05-21/coastal-population-vs-mismanaged-plastic.csv") %>% 
-  clean_names() %>% 
-  rename(country = entity,
-         country_code = code)
+coast_vs_waste <- read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-05-21/coastal-population-vs-mismanaged-plastic.csv") 
 
-mismanaged_vs_gdp <- read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-05-21/per-capita-mismanaged-plastic-waste-vs-gdp-per-capita.csv") %>% 
-  clean_names() %>% 
-  rename(country = entity,
-         country_code = code,
-         mismanaged_plastic_per_cap = per_capita_mismanaged_plastic_waste_kilograms_per_person_per_day)
+mismanaged_vs_gdp <- read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-05-21/per-capita-mismanaged-plastic-waste-vs-gdp-per-capita.csv") 
 
-waste_vs_gdp <- read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-05-21/per-capita-plastic-waste-vs-gdp-per-capita.csv") %>% 
-  clean_names() %>% 
-  rename(country = entity,
-         country_code = code, 
-         gdp_per_cap = gdp_per_capita_ppp_constant_2011_international_constant_2011_international,
-         plastic_waste_per_cap = per_capita_plastic_waste_kilograms_per_person_per_day)
+waste_vs_gdp <- read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-05-21/per-capita-plastic-waste-vs-gdp-per-capita.csv") 
 
 coast_vs_waste
 mismanaged_vs_gdp
 waste_vs_gdp
+
+write_csv(coast_vs_waste, 'data/coast_vs_waste.csv')
+write_csv(mismanaged_vs_gdp, 'data/mismanaged_vs_gdp.csv')
+write_csv(waste_vs_gdp, 'data/waste_vs_gdp.csv')
 ```
 
 From: <https://datahelpdesk.worldbank.org/knowledgebase/articles/906519-world-bank-country-and-lending-groups>
 
 +------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 | "For operational and analytical purposes, economies are divided among income groups according to 2019 gross national income (GNI) per capita, calculated using the World Bank Atlas method. The groups are: low income, \$1,035 or less; lower middle income, \$1,036 - 4,045; upper middle income, \$4,046 - 12,535; and high income, \$12,536 or more. The effective operational cutoff for IDA eligibility is \$1,185 or less." |
-+====================================================================================================================================================================================================================================================================================================================================================================================================================================+
 +------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+
++====================================================================================================================================================================================================================================================================================================================================================================================================================================+ +------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 
 ```{r}
 income_groups <- c('Low income', 'Lower middle income',
@@ -159,4 +152,73 @@ waste_vs_gdp_inc %>%
   geom_density() +
   scale_x_log10()
   
+```
+
+```{r}
+library(rstanarm)
+
+waste_vs_gdp_inc <- waste_vs_gdp_inc %>% 
+  mutate(gdp = gdp_per_cap * total_population_gapminder)
+
+# fit a simple model with one predictor
+fit_1 <- stan_glm(log(plastic_waste_tot) ~ log(gdp), 
+                  data = waste_vs_gdp_inc,
+                  refresh = 0)
+
+# develop the model by adding a second predictor
+fit_2 <- stan_glm(
+  log(plastic_waste_tot) ~ log(gdp) + log(total_population_gapminder), 
+  data = waste_vs_gdp_inc,
+  refresh = 0
+  )
+
+# unsuprisingly the second model is favoured
+loo_1 <- loo(fit_1)
+loo_2 <- loo(fit_2)
+loo_compare(loo_1, loo_2)
+
+plot(loo_1)
+plot(loo_2)
+```
+
+```{r}
+library(tidybayes)
+
+fit_1 %>% 
+  spread_draws(`(Intercept)`)
+
+get_variables(fit_1)
+
+fit_1 %>% 
+  tidy_draws()
+
+broom.mixed::tidy(fit_1)
+
+pp_check(fit_1, plotfun = "hist", nreps = 5)
+
+pp_check(fit_1, plotfun = "stat", stat = function(y) max(y))
+
+mean(bayes_R2(fit_2))
+mean(loo_R2(fit_2))
+
+loo_R2(fit_2) %>% 
+  as_tibble() %>% 
+  ggplot(aes(value)) +
+  geom_histogram()
+```
+
+```{r}
+library("bayesplot")
+library("rstanarm")
+library("ggplot2")
+
+fit <- stan_glm(mpg ~ ., data = mtcars)
+posterior <-  
+  as_tibble(fit)
+
+plot_title <- ggtitle("Posterior distributions",
+                      "with medians and 80% intervals")
+mcmc_areas(posterior,
+           pars = c("cyl", "drat", "am", "wt"),
+           prob = 0.8) + plot_title
 ```

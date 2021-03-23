@@ -1,0 +1,294 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(warning = FALSE,
+                      message = FALSE)
+```
+
+```{r}
+# core libraries
+library(tidyverse)
+library(rstanarm)
+
+# helper packages
+library(janitor) # for clean names
+
+# global settings
+theme_set(theme_light())
+```
+
+## Introduction
+
+### Objectives
+
+-   To develop a regression model to predict the amount of plastic waste created by a country
+
+-   To predict future plastic waste production
+
+### The anticipated audience of the notebook
+
+-   ...
+
+-   ...
+
+### Structure of the notebook
+
+1.  ....
+
+2.  .....
+
+### The datasets used
+
+All data files are located in `/data/`
+
++---------------------------------+--------------------------------+--------------------------------------------+--------------------------------------------------------+
+| File Name                       | Variable name in this notebook | Notes                                      | More details                                           |
++=================================+================================+============================================+========================================================+
+| '../data/coast_vs_waste.csv'    | coast_vs_waste                 | Data provided by \#tidytuesday             | <https://ourworldindata.org/plastic-pollution#summary> |
+|                                 |                                |                                            |                                                        |
+|                                 |                                | -   via our world in data;                 | <https://jambeck.engr.uga.edu/landplasticinput>        |
+|                                 |                                |                                            |                                                        |
+|                                 |                                | -   source: Jambeck et al. 2015 (see link) |                                                        |
++---------------------------------+--------------------------------+--------------------------------------------+--------------------------------------------------------+
+| '../data/mismanaged_vs_gdp.csv' | mismanaged_vs_gdp              | Data provided by \#tidytuesday             | <https://ourworldindata.org/plastic-pollution#summary> |
+|                                 |                                |                                            |                                                        |
+|                                 |                                | -   via our world in data;                 | <https://jambeck.engr.uga.edu/landplasticinput>        |
+|                                 |                                |                                            |                                                        |
+|                                 |                                | -   source: Jambeck et al. 2015 (see link) |                                                        |
++---------------------------------+--------------------------------+--------------------------------------------+--------------------------------------------------------+
+| '../data/waste_vs_gdp.csv'      | waste_vs_gdp                   | Data provided by \#tidytuesday             | <https://ourworldindata.org/plastic-pollution#summary> |
+|                                 |                                |                                            |                                                        |
+|                                 |                                | -   via our world in data;                 | <https://jambeck.engr.uga.edu/landplasticinput>        |
+|                                 |                                |                                            |                                                        |
+|                                 |                                | -   source: Jambeck et al. 2015 (see link) |                                                        |
++---------------------------------+--------------------------------+--------------------------------------------+--------------------------------------------------------+
+
+### A summary of findings / conclusions
+
+### Other notes / reflections
+
+## Data import
+
+The data was provided by \#TidyTuesday, a weekly data science challenge run the R for Data Science Community. Each week a dataset is posted for data scientists to practice their data wrangling and visualisation skills. [In May 2019 \#TidyTuesday posted three datasets](https://github.com/rfordatascience/tidytuesday/tree/master/data/2019/2019-05-21) (sourced from our world in data) providing three datasets focussing on plastic waste production, coastal populations and economic activity. The data is provided (mainly) at the country scale.
+
+Below I read in the three datasets and quickly clean up some of the variable names to make them easier to work with.
+
+```{r}
+
+# read dataset 1 of 3
+coast_vs_waste <- read_csv('../data/coast_vs_waste.csv') %>% 
+  clean_names() %>% 
+  rename(country = entity,
+         country_code = code)
+
+# read dataset 2 of 3
+mismanaged_vs_gdp <- read_csv('../data/mismanaged_vs_gdp.csv') %>% 
+  clean_names() %>% 
+  rename(country = entity,
+         country_code = code,
+         mismanaged_plastic_per_cap =
+           per_capita_mismanaged_plastic_waste_kilograms_per_person_per_day)
+
+# read dataset 3 of 3
+waste_vs_gdp <- read_csv('../data/waste_vs_gdp.csv') %>% 
+  clean_names() %>% 
+  rename(country = entity,
+         country_code = code,
+         population = total_population_gapminder,
+         gdp_per_cap =
+           gdp_per_capita_ppp_constant_2011_international_constant_2011_international,
+         plastic_waste_per_cap =
+           per_capita_plastic_waste_kilograms_per_person_per_day)
+```
+
+## Data cleaning
+
+### Missing data
+
+I started the analysis with the idea that there could be relationship between the amount of plastic waste produced by a country and the size of its economy. So, I focused on just one of the three \#TidyTuesday datasets `waste_vs_gdp`.
+
+```{r}
+# show data for initial inspection
+waste_vs_gdp
+
+# visualise missing data across variables
+waste_vs_gdp %>% 
+  arrange(country, year) %>% 
+  visdat::vis_dat()
+```
+
+Quickly looking at the data and plot above:
+
+-   I am happy the data types for each variable are appropriate and that the variables look to be in tidy format.
+
+-   I can see that it is presented as a longitudinal dataset with each row consisting of an observation for a country (or another entity - e.g. a group of countries) for a specific year.
+
+-   However, the variable I am interesting in predicting (plastic waste) most of the data is missing ...
+
+There is data on plastic waste production for 2010 (see below). So, data for other years can be removed.
+
+```{r}
+# find out what plastic waste data is actually available
+waste_vs_gdp %>% 
+  filter(!is.na(plastic_waste_per_cap)) %>% 
+  distinct(year)
+
+# remove observations where there is no plastic waste data available
+waste_vs_gdp <- waste_vs_gdp %>% 
+  filter(!is.na(plastic_waste_per_cap))
+```
+
+Taking another at the missing data (just for the year 2010):
+
+-   I can see there is some missing data for `gdp_per_cap` . I'm thinking that this variable will be used as a predictor later on in a linear regression model, so I looked at the missing data in a more detail.
+
+-   Based on a quick inspect, the 38 entities without `gdp_per_cap` data (see below) look to fall into two categories:
+
+    -   small dependencies, territories and islands which form part of larger countries, for example Gibraltar which is part of the UK.
+
+    -   countries where is it might be difficult to quantify GDP, for example North Korea and Cuba.
+
+-   Although, it means losing approximately 20% of the dataset I think the best option is to omit these countries from the analysis. As at the moment I can't think of a way to reliably impute GDP values for these 38 entities (particularly as they may have different economic characteristics from typical larger countries).
+
+```{r}
+# look again at where things are at in terms of missing data
+waste_vs_gdp %>% 
+  visdat::vis_miss()
+
+# check which countries/entities have no GDP data
+waste_vs_gdp %>% 
+  filter(is.na(gdp_per_cap)) %>% 
+  distinct(country, country_code)
+
+# remove countries with no GDP data
+waste_vs_gdp <- waste_vs_gdp %>% 
+  filter(!is.na(gdp_per_cap))
+
+```
+
+So, looking for the last time at missing data there is just the missing data for population to consider:
+
+-   As it is just three countries without population data I am comfortable with omitting these from the analysis.
+
+```{r}
+# look again at where things are at in terms of missing data
+waste_vs_gdp %>% 
+  visdat::vis_miss()
+
+# check which entities/countries don't have population data
+waste_vs_gdp %>% 
+  filter(is.na(population)) %>% 
+  distinct(country, country_code)
+
+# remove observations without population information  
+waste_vs_gdp <- waste_vs_gdp %>% 
+  filter(!is.na(population))
+
+```
+
+### Inspecting the data for the country variable
+
+Given the raw data used the variable name (geographic) entity rather than `country` I wanted to check that the cleaned data only contains countries. Given there are only 145 observations remaining in the dataset, I did this check manually. There were no obvious non-country entities (e.g. continents such as Europe or Asia, or high/middle/low income country groups) remaining.
+
+```{r}
+waste_vs_gdp %>% 
+  select(country, country_code)
+```
+
+I also confirmed there are no duplicates of countries within the dataset.
+
+```{r}
+# confirm there are no duplicates
+assertthat::are_equal(nrow(waste_vs_gdp),
+                      nrow(waste_vs_gdp %>% 
+                             distinct(country))
+)
+
+
+```
+
+```{r}
+# reassign at dataframe at the end of the data cleaning process
+waste_vs_gdp_cleaned <- waste_vs_gdp
+```
+
+## Exploratory data analysis
+
+The plastic waste and gdp data are represented on a per capita basis (`plastic_waste_per_cap` and `gdp_per_cap` respectively). During the modelling process I think it will be useful to have the absolute values for plastic waste and gdp. Fortunately, population data is provide so it is easy to calculate these figures.
+
+Having calculated `plastic_waste_tot`, I think it make sense to adjust the units to tonnes of waste per year (`plastic_waste_per_cap` was in kg per day per person). Just to confirm that the transformation I sum `plastic_waste_tot` to give global plastic waste for 2010 (which is approx. 269 million tonnes ). This is close enough to the headline figure of 275 million tonnes of global plastic waste for 2010 given by [Jambeck et al.](https://jambeck.engr.uga.edu/landplasticinput) (), to be confident nothing major has gone wrong in my calculation.
+
+```{r}
+# create new variables for eda and regression
+waste_vs_gdp_eda <- waste_vs_gdp_cleaned %>% 
+  mutate(plastic_waste_tot = plastic_waste_per_cap * population,
+         gdp = gdp_per_cap * population,
+         
+         # adjust units
+         plastic_waste_tot = (plastic_waste_tot / 1000) * 365
+         )
+
+waste_vs_gdp_eda %>% 
+  summarise(sum(plastic_waste_tot)) %>% 
+  pull()
+```
+
+From the summary statistics (see below) for the outcome variable (`plastic_waste_tot`) and the two potential predictor variables (`gdp` and `population`), it looks like all three will be heavily right-skewed. And, this is confirmed by the plots below which apply a log scale to the x axis.
+
+So, I start with a little bit of very basic feature engineering and take logs of the three variables to produce outcome and predictors with more normal-like distributions.
+
+```{r}
+# produce summary statistics
+waste_vs_gdp_eda %>% 
+  select(-year) %>% 
+  skimr::skim() %>% 
+  skimr::yank("numeric")
+
+# define labels for plotting
+x_lab_pop <- "Plastic waste produced (tonnes per year)"
+x_lab_gdp <- "\n2010 GDP (USD)\n\nadjusted for inflation (2011 benchmark year) and purchaing power parity"
+y_lab <- "Number of countries"
+caption_lab <- "Source: ourworldindata / gapminder"
+
+# plot transformed variables
+p <- ggplot(waste_vs_gdp_eda)
+
+p + geom_histogram(aes(plastic_waste_tot)) +
+  scale_x_log10(labels = scales::comma) +
+  labs(x = x_lab_pop,
+       y = y_lab,
+       caption = caption_lab )
+
+p + geom_histogram(aes(gdp)) +
+  scale_x_log10(labels = scales::label_number_si(accuracy=0.1)) +
+  labs(x = x_lab_gdp,
+       y = y_lab,
+       caption = caption_lab)
+
+p + geom_histogram(aes(population)) +
+  scale_x_log10(labels = scales::comma) +
+  labs(x = "Population",
+       y = y_lab,
+       caption = caption_lab)
+
+# transform skewed variables
+waste_vs_gdp_eda <- waste_vs_gdp_eda %>% 
+  mutate(across(.cols = population:gdp,
+                .fns = log,
+                .names = "log_{.col}")
+         )
+
+
+
+```
+
+Multicollinearity increases standard errors of regression coefficients ...
+
+```{r}
+GGally::ggpairs(waste_vs_gdp_eda %>% select(starts_with("log_")))
+```
