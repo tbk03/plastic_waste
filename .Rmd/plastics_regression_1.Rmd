@@ -7,7 +7,8 @@ output:
 
 ```{r, include = FALSE}
 knitr::opts_chunk$set(warning = FALSE,
-                      message = FALSE)
+                      message = FALSE,
+                      cache = TRUE)
 ```
 
 ```{r}
@@ -27,6 +28,8 @@ theme_set(theme_light())
 ### Objectives
 
 -   To develop a regression model to predict the amount of plastic waste created by a country
+
+-   Compare the performance of several regression models and choose the best performing.
 
 -   To predict future plastic waste production
 
@@ -203,7 +206,7 @@ waste_vs_gdp %>%
 I also confirmed there are no duplicates of countries within the dataset.
 
 ```{r}
-# confirm there are no duplicates
+# confirm there are no duplicate countries
 assertthat::are_equal(nrow(waste_vs_gdp),
                       nrow(waste_vs_gdp %>% 
                              distinct(country))
@@ -287,8 +290,188 @@ waste_vs_gdp_eda <- waste_vs_gdp_eda %>%
 
 ```
 
-Multicollinearity increases standard errors of regression coefficients ...
+There is a high degree of correlation between the logs each of the predictor variables (`population` and `gdp`) and the log of the outcome variable (`plastic_waste_tot`)(see below). This is promising in terms of developing a predictive linear regression model).
+
+However, there is also evidence of multicollinearity (i.e. a high degree of correlation between the two predictor variable). If both are included in a linear regression model there is the potential for standard errors of the regression coefficients to increase (relative to a model containing only one of the two predictors). This is something to come back to in the comparision of model performance below.
 
 ```{r}
 GGally::ggpairs(waste_vs_gdp_eda %>% select(starts_with("log_")))
+```
+
+## A simple regression model
+
+### Model fitting
+
+Below I fit three linear models (using a Bayesian linear regression algorithm from the `rstanarm` package) with `plastic_waste_tot` as the outcome variable. The three models have different predictors as follows:
+
+1.  Using `gdp` as a single predictor;
+
+2.  Using `population` as a single predictor;
+
+3.  Using both `gdp` and `population` as predictors.
+
+Reviewing the outputs of the three model fits I noted the following:
+
+-   The residual standard deviation (sigma in the output below) is highest for model 1 and lowest for model 3.
+
+-   The uncertainty around the values of the regression coefficients (MAD_SD in the output below) is smallest for model 2.
+
+Below I explore these two points further by visualising the residuals and the uncertainty around the regression coefficients.
+
+```{r}
+# reassign data at the start of modelling section
+waste_vs_gdp_mod <- waste_vs_gdp_eda 
+
+# fit models
+lm_1 <- stan_glm(formula = log_plastic_waste_tot ~ log_gdp, 
+                 data = waste_vs_gdp_mod,
+                 refresh = 0)
+
+lm_2 <- update(lm_1, formula = log_plastic_waste_tot ~ log_population)
+lm_3 <- update(lm_1, formula = log_plastic_waste_tot ~ log_gdp + log_population)
+
+# display model outputs
+lm_1
+lm_2
+lm_3
+```
+
+### Uncertainty in the model fit
+
+For the first two models (those with just a single continuous predictor) it is straight-forward to plot the regression line alongside the raw data. The uncertainty associated with the regression line was added by plotting randomly sampled draws from the posterior distribution (for the regression coefficients).
+
+For both these simple single predictor models a good fit between the model and the data can be observed. Additionally the uncertainty around the intercept and gradient terms of the regression line appears to be relatively limited.
+
+```{r}
+
+plot_lm_with_uncertainty <- function(model, data, x, y){
+  
+  lm_coef <- coef(model)
+  
+  # sample draws from the posterior distribution
+  posterior_coef_draws <- as_tibble(model) %>% 
+    rename(a = `(Intercept)`,
+           b = {{x}}) %>% 
+    sample_n(100)
+  
+  # produce regression plot (including uncertainty)
+  ggplot(data,
+         aes({{x}}, {{y}})) +
+    geom_point() +
+    
+    geom_abline(data = posterior_coef_draws,
+                mapping = aes(intercept = a,
+                              slope = b),
+                colour = 'skyblue',
+                alpha = 0.3, size = 0.2) +  # a sample of posterior to show                                                    uncertainty
+    
+    geom_abline(intercept = lm_coef[1], slope = lm_coef[2],
+                size = 1) # estimated regression line
+  
+}
+
+plot_lm_with_uncertainty(lm_1, waste_vs_gdp_mod, 
+                         log_gdp, log_plastic_waste_tot) +
+  labs(x = "Log GDP",
+       y = "Log total annual plastic waste")
+
+plot_lm_with_uncertainty(lm_2, waste_vs_gdp_mod, 
+                         log_population, log_plastic_waste_tot) +
+  labs(x = "Log Population",
+       y = "Log total annual plastic waste")
+```
+
+### Reviewing the residuals
+
+Looking at the residuals for each of the three models (see below) a similar pattern is present. As the amount of plastic waste produced by a country grows so do the residuals. In all three models the residuals diverge from 0 from predictions of approximately 0.5 million tonnes of plastic per year upwards. This suggest that for countries producing larger amounts of plastic the models are
+
+```{r}
+
+residuals <- waste_vs_gdp_mod %>% 
+  mutate(pred_lm_1 = exp(predict(lm_1)),
+         pred_lm_2 = exp(predict(lm_2)),
+         pred_lm_3 = exp(predict(lm_3))) %>% 
+  
+  select(plastic_waste_tot,
+         starts_with("pred_")) %>% 
+  
+  mutate(resid_lm_1 = plastic_waste_tot - pred_lm_1,
+         resid_lm_2 = plastic_waste_tot - pred_lm_2,
+         resid_lm_3 = plastic_waste_tot - pred_lm_3)
+
+plot_residuals <- function(data, x, y, ...){
+  ggplot(residuals,
+         aes({{x}}, {{y}})) +
+    geom_hline(yintercept = 0, colour = "grey50") +
+    geom_point() +
+    scale_x_log10(labels = scales::comma) +
+    #coord_cartesian(ylim = c(-4.25e7, 4.25e7)) +
+    labs(y = "Residual\n(Tonnes of plastic waster per year)")
+}
+
+plot_residuals(residuals, pred_lm_1, resid_lm_1) +
+  labs(x = "predicted value\nlm_1 (log_plastic_waste_tot ~ log_gdp)")
+
+plot_residuals(residuals, pred_lm_2, resid_lm_2) +
+  labs(x = "predicted value\nlm_1 (log_plastic_waste_tot ~ log_population)")
+
+plot_residuals(residuals, pred_lm_3, resid_lm_3) +
+  labs(x = "predicted value\nlm_1 (log_plastic_waste_tot ~ log_gdp + log_population)")
+```
+
+I was wondering if the trend above would remain if I plotted the residuals as a proportion of the observed value (see below). This allowed me to get a sense of the errors in the models accounting for the wide variation in the amounts of plastic waste produced by the countries in the dataset (ranging from below 1000 tonnes per year to over 10 million tonnes). There is some indication in the plots below that all three of the models perform better for countries producing small amounts of plastic waste and worse for countries producing large amounts. However, the trend is less pronounced than in the plots of the raw residuals.
+
+```{r}
+plot_residuals_perc <- function(data, x, y, ...){
+  ggplot(residuals,
+         aes({{x}}, {{y}} / plastic_waste_tot)) +
+    geom_hline(yintercept = 0, colour = "grey50") +
+    geom_point() +
+    scale_x_log10(labels = scales::comma) +
+    #coord_cartesian(ylim = c(-4.25e7, 4.25e7)) +
+    labs(y = "Residual / observed value")
+}
+
+plot_residuals_perc(residuals, pred_lm_1, resid_lm_1) +
+  labs(x = "predicted value\nlm_1 (log_plastic_waste_tot ~ log_gdp)")
+
+plot_residuals_perc(residuals, pred_lm_2, resid_lm_2) +
+  labs(x = "predicted value\nlm_1 (log_plastic_waste_tot ~ log_population)")
+
+plot_residuals_perc(residuals, pred_lm_3, resid_lm_3) +
+  labs(x = "predicted value\nlm_1 (log_plastic_waste_tot ~ log_gdp + log_population)")
+```
+
+### Bayesian R squared
+
+$\frac{\text{Explained Variance}}{\text{Explained Variance + Residual Variance}} = \frac{var_{fit}}{var_{fit} + var_{res}}$
+
+Posterior distributions of Bayesian R^2^
+
+```{r}
+
+tribble(
+  ~model, ~r2,
+  1, median(bayes_R2(lm_1)),
+  2, median(bayes_R2(lm_2)),
+  3, median(bayes_R2(lm_3))
+) %>% 
+  kableExtra::kbl() %>% 
+  kableExtra::kable_styling()
+
+plot_bayes_r2 <- function(mod){
+  
+  bayes_R2(mod) %>%
+    as_tibble() %>% 
+    ggplot(aes(value)) +
+    geom_histogram(colour = "black") +
+    geom_vline(aes(xintercept = median(value)),
+               colour = "black", size = 2) +
+    labs(x = "Bayesian R Squared")
+}
+
+plot_bayes_r2(lm_1)
+plot_bayes_r2(lm_2)
+plot_bayes_r2(lm_3)
+
 ```
