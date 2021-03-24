@@ -443,13 +443,17 @@ plot_residuals_perc(residuals, pred_lm_3, resid_lm_3) +
 ```
 
 ### Bayesian R squared
+Next I took a look at the R^2^ values for each of three models. Just to note as this is a Bayesian regression analysis, the calculation of R^2^ is slight different from the standard (frequentist) calculation. Bayesian R^2^ is defined as:
 
 $\frac{\text{Explained Variance}}{\text{Explained Variance + Residual Variance}} = \frac{var_{fit}}{var_{fit} + var_{res}}$
 
-Posterior distributions of Bayesian R^2^
+The table below shows the model three (including both `gdp` and `population` as predictors) has the largest R^2^ value and hence explain more of the variance in the dataset than the other two models.
+
+In histograms showing draws from the posterior distribution of Bayesian R^2^ there are some overlaps between the lower tail of model 3, and the upper tails of models 1 and 2. I'll leave formal analysis of confidence intervals for the R^2^ values, as these overlaps appear to be relatively small.
 
 ```{r}
 
+# display Bayesian R2 values for the three models
 tribble(
   ~model, ~r2,
   1, median(bayes_R2(lm_1)),
@@ -459,6 +463,7 @@ tribble(
   kableExtra::kbl() %>% 
   kableExtra::kable_styling()
 
+# define r2 plots
 plot_bayes_r2 <- function(mod){
   
   bayes_R2(mod) %>%
@@ -467,11 +472,54 @@ plot_bayes_r2 <- function(mod){
     geom_histogram(colour = "black") +
     geom_vline(aes(xintercept = median(value)),
                colour = "black", size = 2) +
-    labs(x = "Bayesian R Squared")
+    labs(x = "Bayesian R Squared",
+         y = "Number of draws from posterior")
 }
 
-plot_bayes_r2(lm_1)
-plot_bayes_r2(lm_2)
-plot_bayes_r2(lm_3)
+# produce plots for the three models
+plot_bayes_r2(lm_1) +
+  labs(subtitle = "lm_1 (log_plastic_waste_tot ~ log_gdp)")
+
+plot_bayes_r2(lm_2) +
+  labs(subtitle = "lm_2 (log_plastic_waste_tot ~ log_population)")
+       
+plot_bayes_r2(lm_3) +
+  labs(subtitle = "lm_3 (log_plastic_waste_tot ~ log_gdp + log_population")
 
 ```
+
+### Cross validation and log scores
+To assess the likely relative performance of the three models on out-of-sample data I ran LOO (leave-one-out) cross-validation for each model. The accuracy of the each models predictions across the cross validations was compared using log scores. The output of the log score comparison (see below) shows that model 3 (including `gdp` and `population` as predictors) offered the best performance. With model 1 (only `gdp` as a predictor) offering the worst performance of the three models. The relative performance of the models in cross validation is the same could be see above when considering the residual standard deviation and R^2^ values for each model. So, we can be relatively confident that model 3 is the best performing of the three simple models.
+
+```{r}
+
+# run loo cross validation
+loo_1 <- loo(lm_1)
+loo_2 <- loo(lm_2)
+loo_3 <- loo(lm_3)
+
+# compare performance of model using log scores
+loo_compare(loo_1, loo_2, loo_3)
+
+```
+
+### Graphical posterior predictive checks 
+
+```{r}
+
+library(bayesplot)
+
+y <- waste_vs_gdp_mod$log_plastic_waste_tot
+y_rep <- posterior_predict(lm_3, draws = 500)
+dim(y_rep)
+
+color_scheme_set("brightblue")
+
+ppc_dens_overlay(y,
+                 # sample 50 rows of matrix at random
+                 y_rep[sample(nrow(y_rep), size = 50),])
+```
+
+
+
+## Applying the model
