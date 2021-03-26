@@ -17,7 +17,8 @@ library(tidyverse)
 library(rstanarm)
 
 # helper packages
-library(janitor) # for clean names
+library(janitor)    # for clean names
+library(bayesplot)  # posterior predictive graphic checks
 
 # global settings
 theme_set(theme_light())
@@ -142,7 +143,7 @@ waste_vs_gdp %>%
   distinct(year)
 
 # remove observations where there is no plastic waste data available
-waste_vs_gdp <- waste_vs_gdp %>% 
+waste_vs_gdp_cleaned <- waste_vs_gdp %>% 
   filter(!is.na(plastic_waste_per_cap))
 ```
 
@@ -160,16 +161,16 @@ Taking another at the missing data (just for the year 2010):
 
 ```{r}
 # look again at where things are at in terms of missing data
-waste_vs_gdp %>% 
+waste_vs_gdp_cleaned %>% 
   visdat::vis_miss()
 
 # check which countries/entities have no GDP data
-waste_vs_gdp %>% 
+waste_vs_gdp_cleaned %>% 
   filter(is.na(gdp_per_cap)) %>% 
   distinct(country, country_code)
 
 # remove countries with no GDP data
-waste_vs_gdp <- waste_vs_gdp %>% 
+waste_vs_gdp_cleaned <- waste_vs_gdp_cleaned %>% 
   filter(!is.na(gdp_per_cap))
 
 ```
@@ -180,16 +181,16 @@ So, looking for the last time at missing data there is just the missing data for
 
 ```{r}
 # look again at where things are at in terms of missing data
-waste_vs_gdp %>% 
+waste_vs_gdp_cleaned %>% 
   visdat::vis_miss()
 
 # check which entities/countries don't have population data
-waste_vs_gdp %>% 
+waste_vs_gdp_cleaned %>% 
   filter(is.na(population)) %>% 
   distinct(country, country_code)
 
 # remove observations without population information  
-waste_vs_gdp <- waste_vs_gdp %>% 
+waste_vs_gdp_cleaned <- waste_vs_gdp_cleaned %>% 
   filter(!is.na(population))
 
 ```
@@ -199,7 +200,7 @@ waste_vs_gdp <- waste_vs_gdp %>%
 Given the raw data used the variable name (geographic) entity rather than `country` I wanted to check that the cleaned data only contains countries. Given there are only 145 observations remaining in the dataset, I did this check manually. There were no obvious non-country entities (e.g. continents such as Europe or Asia, or high/middle/low income country groups) remaining.
 
 ```{r}
-waste_vs_gdp %>% 
+waste_vs_gdp_cleaned %>% 
   select(country, country_code)
 ```
 
@@ -207,17 +208,12 @@ I also confirmed there are no duplicates of countries within the dataset.
 
 ```{r}
 # confirm there are no duplicate countries
-assertthat::are_equal(nrow(waste_vs_gdp),
-                      nrow(waste_vs_gdp %>% 
+assertthat::are_equal(nrow(waste_vs_gdp_cleaned),
+                      nrow(waste_vs_gdp_cleaned %>% 
                              distinct(country))
 )
 
 
-```
-
-```{r}
-# reassign at dataframe at the end of the data cleaning process
-waste_vs_gdp_cleaned <- waste_vs_gdp
 ```
 
 ## Exploratory data analysis
@@ -261,19 +257,19 @@ caption_lab <- "Source: ourworldindata / gapminder"
 # plot transformed variables
 p <- ggplot(waste_vs_gdp_eda)
 
-p + geom_histogram(aes(plastic_waste_tot)) +
+p + geom_histogram(aes(plastic_waste_tot), colour = "black") +
   scale_x_log10(labels = scales::comma) +
   labs(x = x_lab_pop,
        y = y_lab,
        caption = caption_lab )
 
-p + geom_histogram(aes(gdp)) +
+p + geom_histogram(aes(gdp), colour = "black") +
   scale_x_log10(labels = scales::label_number_si(accuracy=0.1)) +
   labs(x = x_lab_gdp,
        y = y_lab,
        caption = caption_lab)
 
-p + geom_histogram(aes(population)) +
+p + geom_histogram(aes(population), colour = "black") +
   scale_x_log10(labels = scales::comma) +
   labs(x = "Population",
        y = y_lab,
@@ -443,6 +439,7 @@ plot_residuals_perc(residuals, pred_lm_3, resid_lm_3) +
 ```
 
 ### Bayesian R squared
+
 Next I took a look at the R^2^ values for each of three models. Just to note as this is a Bayesian regression analysis, the calculation of R^2^ is slight different from the standard (frequentist) calculation. Bayesian R^2^ is defined as:
 
 $\frac{\text{Explained Variance}}{\text{Explained Variance + Residual Variance}} = \frac{var_{fit}}{var_{fit} + var_{res}}$
@@ -473,7 +470,8 @@ plot_bayes_r2 <- function(mod){
     geom_vline(aes(xintercept = median(value)),
                colour = "black", size = 2) +
     labs(x = "Bayesian R Squared",
-         y = "Number of draws from posterior")
+         y = "Number of draws from posterior") +
+    theme_light()
 }
 
 # produce plots for the three models
@@ -489,6 +487,7 @@ plot_bayes_r2(lm_3) +
 ```
 
 ### Cross validation and log scores
+
 To assess the likely relative performance of the three models on out-of-sample data I ran LOO (leave-one-out) cross-validation for each model. The accuracy of the each models predictions across the cross validations was compared using log scores. The output of the log score comparison (see below) shows that model 3 (including `gdp` and `population` as predictors) offered the best performance. With model 1 (only `gdp` as a predictor) offering the worst performance of the three models. The relative performance of the models in cross validation is the same could be see above when considering the residual standard deviation and R^2^ values for each model. So, we can be relatively confident that model 3 is the best performing of the three simple models.
 
 ```{r}
@@ -503,23 +502,82 @@ loo_compare(loo_1, loo_2, loo_3)
 
 ```
 
-### Graphical posterior predictive checks 
+### Graphical posterior predictive checks
+
+The plot below shows the density estimate for observed values of (log) total annual plastic waste in dark blue (labeled as y). Also shown (in light blue) are density estimates for predicted values of (log) total annual plastic waste. 75 randomly selected draws from the posterior distribution of regression coefficients (labeled as y~rep~) are shown to give a sense of the uncertainty in the model predictions.
+
+This visual comparison shows that the density of observed values has a broader, wider peak than the model values. So, in effect the model is pushing prediction toward the center of the distribution a bit too much. If I was performing a more in-depth study it would be worth exploring further if the model could be developed further to produce predictions with a distribution more closely resembling the observed values.
 
 ```{r}
 
-library(bayesplot)
+# prepare vectors for using bayesplot functions
+y <- waste_vs_gdp_mod$log_plastic_waste_tot     # observed values of y
+y_rep <- posterior_predict(lm_3, draws = 500)   # predicted values of v 
+                                                # for 500 draws from the posterior
 
-y <- waste_vs_gdp_mod$log_plastic_waste_tot
-y_rep <- posterior_predict(lm_3, draws = 500)
+# confirm dimensions are as expected
 dim(y_rep)
 
+# plot 
 color_scheme_set("brightblue")
-
 ppc_dens_overlay(y,
                  # sample 50 rows of matrix at random
-                 y_rep[sample(nrow(y_rep), size = 50),])
+                 y_rep[sample(nrow(y_rep), size = 75),]) +
+  
+  labs(x = "Log total annual plastic waste",
+       y = "Density estimate")
 ```
 
+To understand in a little more details how the model is performing I looked at three test statistics (the median, maximum and minimum values). For each statistic the observed value (shown as a single vertical line, labeled T(y)) is overlaid on a histogram showing the predicted values produced by a sample of draws from the posterior predictive. Reviewing the three plots for the three test statistics I noted:
 
+-    The observed test statistics values are approximately in the center of the distributions of test statistics produced by the model. So, the model is predicting median, min and maximum values fairly accurately.
+
+-   However, the observed maximum is slightly displaced from the center of the distribution produced by the model. Suggesting that model has a tendency to under-predict for countries where the largest amount of plastic waste are produced.
+
+```{r}
+# define a function for adding standard labels to test statistic plots
+test_stat_labs <- function(){
+  
+  list(labs(x = "Log(total annual plastic waste)",
+            y = "Number of draws from posterior\npredictive distriubtion"))
+}
+
+# define functions for test statistics
+max_value <- function(x) max(x)
+min_value <- function(x) min(x)
+median_value <- function(x) median(x)
+
+
+# plot districutions of test statistics
+ppc_stat(y, y_rep, stat = median_value) +
+  test_stat_labs()
+
+ppc_stat(y, y_rep, stat = max_value) +
+  test_stat_labs()
+
+ppc_stat(y, y_rep, stat = min_value) +
+  test_stat_labs()
+```
+
+Finally, I quickly looked at the uncertainty around the three parameters in the model (the intercept, and the coefficients for the two predictors). See plot below, where the point represents the central estimate for the parameter, and the thick dark blue line represents a 50% uncertainty interval and the thin blue line a 90% uncertainty interval. Reviewing the plot I noted that:
+
+-   There is very little uncertainty associated with the co-efficents of the two predictor variables.
+
+-   So, the uncertainty around the model parameter is effectively restricted to the value of the intercept of the regression line.
+
+```{r}
+# process posterior for interval plots
+posterior <- as.array(lm_3)
+
+# plot uncertainty around model parameters
+mcmc_intervals(posterior, pars = c("(Intercept)", "log_gdp", 
+                                   "log_population"))
+```
 
 ## Applying the model
+
+```{r}
+waste_vs_gdp %>% 
+  arrange(year, country) %>% 
+  visdat::vis_dat()
+```
