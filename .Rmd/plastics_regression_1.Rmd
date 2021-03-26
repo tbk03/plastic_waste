@@ -377,6 +377,21 @@ plot_lm_with_uncertainty(lm_2, waste_vs_gdp_mod,
        y = "Log total annual plastic waste")
 ```
 
+Additionally, I quickly looked at the uncertainty around the three parameters in the model (the intercept, and the coefficients for the two predictors). See plot below, where the point represents the central estimate for the parameter, and the thick dark blue line represents a 50% uncertainty interval and the thin blue line a 90% uncertainty interval. Reviewing the plot I noted that:
+
+-   There is very little uncertainty associated with the co-efficents of the two predictor variables.
+
+-   So, the uncertainty around the model parameter is effectively restricted to the value of the intercept of the regression line.
+
+```{r}
+# process posterior for interval plots
+posterior <- as.array(lm_3)
+
+# plot uncertainty around model parameters
+mcmc_intervals(posterior, pars = c("(Intercept)", "log_gdp", 
+                                   "log_population"))
+```
+
 ### Reviewing the residuals
 
 Looking at the residuals for each of the three models (see below) a similar pattern is present. As the amount of plastic waste produced by a country grows so do the residuals. In all three models the residuals diverge from 0 from predictions of approximately 0.5 million tonnes of plastic per year upwards. This suggest that for countries producing larger amounts of plastic the models are
@@ -530,7 +545,7 @@ ppc_dens_overlay(y,
 
 To understand in a little more details how the model is performing I looked at three test statistics (the median, maximum and minimum values). For each statistic the observed value (shown as a single vertical line, labeled T(y)) is overlaid on a histogram showing the predicted values produced by a sample of draws from the posterior predictive. Reviewing the three plots for the three test statistics I noted:
 
--    The observed test statistics values are approximately in the center of the distributions of test statistics produced by the model. So, the model is predicting median, min and maximum values fairly accurately.
+-   The observed test statistics values are approximately in the center of the distributions of test statistics produced by the model. So, the model is predicting median, min and maximum values fairly accurately.
 
 -   However, the observed maximum is slightly displaced from the center of the distribution produced by the model. Suggesting that model has a tendency to under-predict for countries where the largest amount of plastic waste are produced.
 
@@ -557,27 +572,90 @@ ppc_stat(y, y_rep, stat = max_value) +
 
 ppc_stat(y, y_rep, stat = min_value) +
   test_stat_labs()
+
 ```
 
-Finally, I quickly looked at the uncertainty around the three parameters in the model (the intercept, and the coefficients for the two predictors). See plot below, where the point represents the central estimate for the parameter, and the thick dark blue line represents a 50% uncertainty interval and the thin blue line a 90% uncertainty interval. Reviewing the plot I noted that:
+### Summary
 
--   There is very little uncertainty associated with the co-efficents of the two predictor variables.
+I think the key points to draw out of analysis of the model fit presented above are as follows.
 
--   So, the uncertainty around the model parameter is effectively restricted to the value of the intercept of the regression line.
+-   The two predictor model (including `gdp` and `population` as predictors ) produced more accurate in-sample predictions than either of the models containing only one predictor. The two predictors are closely correlated , however than did not appear to de-stablise the model.
 
-```{r}
-# process posterior for interval plots
-posterior <- as.array(lm_3)
+-   Leave-one-out cross validation showed that the two predictor model is also likely to perform better on out-of-sample data than either of the other one predictor models.
 
-# plot uncertainty around model parameters
-mcmc_intervals(posterior, pars = c("(Intercept)", "log_gdp", 
-                                   "log_population"))
-```
+-   There is little uncertainty around the parameters (intercept and the predictor coefficients) of the two predictor model.
+
+-   The residuals for the two predictor model show the accuracy of the model declining as the value of y (i.e. total annual amount of plastic waste produced by a country) increases.
+
+-   Graphical posterior predictive checks for the two predictor model showed a tendency for the model make predictions with higher narrower peak than the observed data.
 
 ## Applying the model
 
+The regression model for predicting the annual amount of plastic waste produced by country (based on its GDP and population) developed above considered a single year of observed data (2010). This was because it was the only year for which data was available for the outcome variable (annual amount of plastic waste) and the predictor variables (GDP and population). However, within the dataset there is data available for the predictors for the period 2011 to 2013 (inclusive). So, I thought it would be interesting to apply the model over this period to (retrospectively) predict the total global production. Before doing so, I need to return to the original data and process it to be used in this prediction exercise.
+
 ```{r}
-waste_vs_gdp %>% 
-  arrange(year, country) %>% 
-  visdat::vis_dat()
+# identify the top 10 waste producers in 2010
+top_waste_2010 <- waste_vs_gdp_mod %>% 
+  slice_max(order_by = plastic_waste_tot,
+            n = 4) %>% 
+  select(country) %>% 
+  pull()
+
+# process source data to focus on 2011 to 2013 where
+# data for both predictors is available
+pred_plastic_waste <- waste_vs_gdp %>%
+  filter(year > 2010,
+         country %in% top_waste_2010) %>%
+  mutate(gdp = gdp_per_cap * population,
+         log_gdp = log(gdp),
+         log_population = log(population)) %>% 
+  filter(!is.na(gdp)) %>% 
+  select(-plastic_waste_per_cap)
+
+# calculate the median prediction from the posterior predictive distribution
+preds <- posterior_predict(lm_3, newdata = pred_plastic_waste) 
+
+median_preds <- preds %>% 
+  as_tibble() %>% 
+  summarise(across(everything(), median)) %>% 
+  pivot_longer(cols = everything(), values_to = "median_pred")
+
+# sample n predictions from posterior predictive distribution
+draws <- preds %>% 
+  t() %>% 
+  as_tibble()
+
+sampled_preds <- draws[, sample(ncol(draws), 50)]
+
+# process predictions for plotting
+waste_by_year_country <- pred_plastic_waste %>% 
+  bind_cols(median_preds, sampled_preds) %>%
+  group_by(year, country) %>% 
+  summarise(across(median_pred:last_col(), sum)) 
+
+waste_by_year_country_med <- waste_by_year_country %>% 
+  select(-starts_with("V"))
+
+waste_by_year_country_draws <- waste_by_year_country %>% 
+  select(-median_pred) %>%
+  pivot_longer(starts_with("V"), names_to = "variable", values_to = "value") 
+
+# produce plot
+ggplot(waste_by_year_country_med) +
+  
+  geom_line(aes(year, exp(median_pred)), 
+            size = 3, colour = "red"
+           ) +
+  
+  geom_line(data = waste_by_year_country_draws,
+            mapping = aes(year, exp(value), group = variable), alpha = 0.3) +
+  
+  scale_x_continuous(breaks = c(2011, 2012, 2013)) +
+  scale_y_continuous(labels = scales::label_number_si(accuracy=0.1)) +
+  
+  labs(x = NULL,
+       y = "Predicted annual plastic waste production\n") +
+  
+  facet_wrap(~country, scales = "free_y") 
+  
 ```
