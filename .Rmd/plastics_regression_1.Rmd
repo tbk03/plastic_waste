@@ -3,12 +3,16 @@ title: "R Notebook"
 output:
   html_document:
     df_print: paged
+    number_sections: true
+    toc: true
+    toc_float: true
 ---
 
 ```{r, include = FALSE}
 knitr::opts_chunk$set(warning = FALSE,
-                      message = FALSE,
-                      cache = TRUE)
+                      message = FALSE)
+                      #,
+                      #cache = TRUE)
 ```
 
 ```{r}
@@ -24,81 +28,52 @@ library(bayesplot)  # posterior predictive graphic checks
 theme_set(theme_light())
 ```
 
-## Introduction
+# Introduction
 
-### Objectives
+In this notebook I try out and apply some of the concepts, tools and techniques I have been learning as I read through the excellent [Regression and Other Stories](https://avehtari.github.io/ROS-Examples/). To do this I needed a dataset to work with. I decided to work with some data I had found (via \#TidyTuesday) on [how much plastic waste countries produce](https://github.com/rfordatascience/tidytuesday/tree/master/data/2019/2019-05-21) So with this dataset to hand, my more specific aims were to:
 
--   To develop a regression model to predict the amount of plastic waste created by a country
+-   To develop a simple (Bayesian) regression model to predict the amount of plastic waste created by a country;
 
--   Compare the performance of several regression models and choose the best performing.
+-   To use appropriate metrics to compare the performance of several regression models;
 
--   To predict future plastic waste production
+-   To use a simple regression to predict 'future' plastic waste production.
 
-### The anticipated audience of the notebook
+In his introductory section (1), I add a few reflections on what I learnt throughout the process of working with the plastic waste data and developing a simple regression model. The following sections of the notebook then address in turn (2) data import, (3) data cleaning, (4) exploratory data analysis, (5) model fitting and evaluation, and (6) applying the model to make predictions.
 
--   ...
+It quickly became clear to me that I was probably not actually working with observed data of how much plastic waste countries had produced in 2011. Rather I was actually working with the outputs of model which estimated how much plastic waste countries had produced in 2011. So, in a very simplistic way I was actually trying to recreate a model developed by a team of researchers ([Jambeck et al. 2015](https://jambeck.engr.uga.edu/landplasticinput)) probably over the course of months and months of work.
 
--   ...
+Fortunately, I had not read the paper detailing the construction of the model I was in effect trying to recreate. If I had read it I would have known in advance too much about the predictors to use, which in turn might well have reduced my opportunities for learning.
 
-### Structure of the notebook
+The simple two predictor model developed in this notebook used a countries population and GDP to estimate it's annual plastic waste production. Disappointingly, the model developed performed badly when attempting to make predictions for countries which produce large amounts of plastic waste. However, the process of developing the model provided a great opportunity for me to develop more hand-on experience of the practicalities of regression modeling.
 
-1.  ....
+The next steps to developing a more nuanced and hopefully more effective model for predicting a country's annual plastic waste production would be to review approaches used to developing plastic waste models by [Jambeck et al. 2015](https://jambeck.engr.uga.edu/landplasticinput) and other researchers. This would hopefully provide me with greater insights into which variables (beyond population and GDP) would be helpful in estimating a country's annual plastic waste production.
 
-2.  .....
+### 
 
-### The datasets used
+## The dataset used
 
 All data files are located in `/data/`
 
-+---------------------------------+--------------------------------+--------------------------------------------+--------------------------------------------------------+
-| File Name                       | Variable name in this notebook | Notes                                      | More details                                           |
-+=================================+================================+============================================+========================================================+
-| '../data/coast_vs_waste.csv'    | coast_vs_waste                 | Data provided by \#tidytuesday             | <https://ourworldindata.org/plastic-pollution#summary> |
-|                                 |                                |                                            |                                                        |
-|                                 |                                | -   via our world in data;                 | <https://jambeck.engr.uga.edu/landplasticinput>        |
-|                                 |                                |                                            |                                                        |
-|                                 |                                | -   source: Jambeck et al. 2015 (see link) |                                                        |
-+---------------------------------+--------------------------------+--------------------------------------------+--------------------------------------------------------+
-| '../data/mismanaged_vs_gdp.csv' | mismanaged_vs_gdp              | Data provided by \#tidytuesday             | <https://ourworldindata.org/plastic-pollution#summary> |
-|                                 |                                |                                            |                                                        |
-|                                 |                                | -   via our world in data;                 | <https://jambeck.engr.uga.edu/landplasticinput>        |
-|                                 |                                |                                            |                                                        |
-|                                 |                                | -   source: Jambeck et al. 2015 (see link) |                                                        |
-+---------------------------------+--------------------------------+--------------------------------------------+--------------------------------------------------------+
-| '../data/waste_vs_gdp.csv'      | waste_vs_gdp                   | Data provided by \#tidytuesday             | <https://ourworldindata.org/plastic-pollution#summary> |
-|                                 |                                |                                            |                                                        |
-|                                 |                                | -   via our world in data;                 | <https://jambeck.engr.uga.edu/landplasticinput>        |
-|                                 |                                |                                            |                                                        |
-|                                 |                                | -   source: Jambeck et al. 2015 (see link) |                                                        |
-+---------------------------------+--------------------------------+--------------------------------------------+--------------------------------------------------------+
++----------------------------+--------------------------------+-------------------------------------------------------------------------------------------------------------------+
+| File Name                  | Variable name in this notebook | Notes                                                                                                             |
++============================+================================+===================================================================================================================+
+| '../data/waste_vs_gdp.csv' | waste_vs_gdp\*                 | [Data provided by \#tidytuesday](https://github.com/rfordatascience/tidytuesday/tree/master/data/2019/2019-05-21) |
+|                            |                                |                                                                                                                   |
+|                            |                                | -   via our [world in data](https://ourworldindata.org/plastic-pollution#summary);                                |
+|                            |                                |                                                                                                                   |
+|                            |                                | -   original sources: [Jambeck et al. 2015](https://jambeck.engr.uga.edu/landplasticinput) and gapminder.         |
++----------------------------+--------------------------------+-------------------------------------------------------------------------------------------------------------------+
 
-### A summary of findings / conclusions
+### 
 
-### Other notes / reflections
+# Data import
 
-## Data import
+The data was provided by \#TidyTuesday, a collaborative weekly data science project run the R for Data Science Community. Each week a dataset is posted for data scientists to practice their data wrangling and visualisation skills. [In May 2019 \#TidyTuesday posted three datasets](https://github.com/rfordatascience/tidytuesday/tree/master/data/2019/2019-05-21) (sourced from our world in data) providing three datasets focussing on plastic waste production, coastal populations and economic activity. The data is provided (mainly) at the country scale.
 
-The data was provided by \#TidyTuesday, a weekly data science challenge run the R for Data Science Community. Each week a dataset is posted for data scientists to practice their data wrangling and visualisation skills. [In May 2019 \#TidyTuesday posted three datasets](https://github.com/rfordatascience/tidytuesday/tree/master/data/2019/2019-05-21) (sourced from our world in data) providing three datasets focussing on plastic waste production, coastal populations and economic activity. The data is provided (mainly) at the country scale.
-
-Below I read in the three datasets and quickly clean up some of the variable names to make them easier to work with.
+In this analysis I work with only one of the three datasets. Below I read in the dataset relating to plastic waste production and GDP and quickly clean up some of the variable names to make them easier to work with.
 
 ```{r}
-
-# read dataset 1 of 3
-coast_vs_waste <- read_csv('../data/coast_vs_waste.csv') %>% 
-  clean_names() %>% 
-  rename(country = entity,
-         country_code = code)
-
-# read dataset 2 of 3
-mismanaged_vs_gdp <- read_csv('../data/mismanaged_vs_gdp.csv') %>% 
-  clean_names() %>% 
-  rename(country = entity,
-         country_code = code,
-         mismanaged_plastic_per_cap =
-           per_capita_mismanaged_plastic_waste_kilograms_per_person_per_day)
-
-# read dataset 3 of 3
+# read dataset
 waste_vs_gdp <- read_csv('../data/waste_vs_gdp.csv') %>% 
   clean_names() %>% 
   rename(country = entity,
@@ -110,9 +85,9 @@ waste_vs_gdp <- read_csv('../data/waste_vs_gdp.csv') %>%
            per_capita_plastic_waste_kilograms_per_person_per_day)
 ```
 
-## Data cleaning
+# Data cleaning
 
-### Missing data
+## Missing data
 
 I started the analysis with the idea that there could be relationship between the amount of plastic waste produced by a country and the size of its economy. So, I focused on just one of the three \#TidyTuesday datasets `waste_vs_gdp`.
 
@@ -195,11 +170,12 @@ waste_vs_gdp_cleaned <- waste_vs_gdp_cleaned %>%
 
 ```
 
-### Inspecting the data for the country variable
+## Inspecting the data for the country variable
 
 Given the raw data used the variable name (geographic) entity rather than `country` I wanted to check that the cleaned data only contains countries. Given there are only 145 observations remaining in the dataset, I did this check manually. There were no obvious non-country entities (e.g. continents such as Europe or Asia, or high/middle/low income country groups) remaining.
 
 ```{r}
+# confirm there are no non-country entities within the dataset
 waste_vs_gdp_cleaned %>% 
   select(country, country_code)
 ```
@@ -216,7 +192,7 @@ assertthat::are_equal(nrow(waste_vs_gdp_cleaned),
 
 ```
 
-## Exploratory data analysis
+# Exploratory data analysis
 
 The plastic waste and gdp data are represented on a per capita basis (`plastic_waste_per_cap` and `gdp_per_cap` respectively). During the modelling process I think it will be useful to have the absolute values for plastic waste and gdp. Fortunately, population data is provide so it is easy to calculate these figures.
 
@@ -232,6 +208,7 @@ waste_vs_gdp_eda <- waste_vs_gdp_cleaned %>%
          plastic_waste_tot = (plastic_waste_tot / 1000) * 365
          )
 
+# calculate global plastic waste total
 waste_vs_gdp_eda %>% 
   summarise(sum(plastic_waste_tot)) %>% 
   pull()
@@ -254,7 +231,7 @@ x_lab_gdp <- "\n2010 GDP (USD)\n\nadjusted for inflation (2011 benchmark year) a
 y_lab <- "Number of countries"
 caption_lab <- "Source: ourworldindata / gapminder"
 
-# plot transformed variables
+# plot histograms for the two predictors and the outcome
 p <- ggplot(waste_vs_gdp_eda)
 
 p + geom_histogram(aes(plastic_waste_tot), colour = "black") +
@@ -275,7 +252,7 @@ p + geom_histogram(aes(population), colour = "black") +
        y = y_lab,
        caption = caption_lab)
 
-# transform skewed variables
+# log transform skewed variables
 waste_vs_gdp_eda <- waste_vs_gdp_eda %>% 
   mutate(across(.cols = population:gdp,
                 .fns = log,
@@ -291,12 +268,13 @@ There is a high degree of correlation between the logs each of the predictor var
 However, there is also evidence of multicollinearity (i.e. a high degree of correlation between the two predictor variable). If both are included in a linear regression model there is the potential for standard errors of the regression coefficients to increase (relative to a model containing only one of the two predictors). This is something to come back to in the comparision of model performance below.
 
 ```{r}
+# pair plot to review correlation between predictors and outcome variables
 GGally::ggpairs(waste_vs_gdp_eda %>% select(starts_with("log_")))
 ```
 
-## A simple regression model
+# A simple regression model
 
-### Model fitting
+## Model fitting
 
 Below I fit three linear models (using a Bayesian linear regression algorithm from the `rstanarm` package) with `plastic_waste_tot` as the outcome variable. The three models have different predictors as follows:
 
@@ -332,14 +310,15 @@ lm_2
 lm_3
 ```
 
-### Uncertainty in the model fit
+## Uncertainty in the model fit
 
 For the first two models (those with just a single continuous predictor) it is straight-forward to plot the regression line alongside the raw data. The uncertainty associated with the regression line was added by plotting randomly sampled draws from the posterior distribution (for the regression coefficients).
 
 For both these simple single predictor models a good fit between the model and the data can be observed. Additionally the uncertainty around the intercept and gradient terms of the regression line appears to be relatively limited.
 
 ```{r}
-
+# define a function for plotting a regression line with
+# draws from posterior distribution
 plot_lm_with_uncertainty <- function(model, data, x, y){
   
   lm_coef <- coef(model)
@@ -366,38 +345,58 @@ plot_lm_with_uncertainty <- function(model, data, x, y){
   
 }
 
+# Produce plots of fitted model (+ uncertainty)
 plot_lm_with_uncertainty(lm_1, waste_vs_gdp_mod, 
                          log_gdp, log_plastic_waste_tot) +
   labs(x = "Log GDP",
-       y = "Log total annual plastic waste")
+       y = "Log total annual plastic waste",
+       subtitle = "lm_1 (log_plastic_waste_tot ~ log_gdp)")
+
 
 plot_lm_with_uncertainty(lm_2, waste_vs_gdp_mod, 
                          log_population, log_plastic_waste_tot) +
   labs(x = "Log Population",
-       y = "Log total annual plastic waste")
+       y = "Log total annual plastic waste",
+       subtitle = "lm_2 (log_plastic_waste_tot ~ log_population)")
 ```
 
-Additionally, I quickly looked at the uncertainty around the three parameters in the model (the intercept, and the coefficients for the two predictors). See plot below, where the point represents the central estimate for the parameter, and the thick dark blue line represents a 50% uncertainty interval and the thin blue line a 90% uncertainty interval. Reviewing the plot I noted that:
+Additionally, I quickly looked at the uncertainty around the parameters of each of three the models (i.e. uncertainty around the intercept, and the coefficients for the predictor/s). See plots below, where the point represents the central estimate for the parameter, and the thick dark blue line represents a 50% uncertainty interval and the thin blue line a 90% uncertainty interval. Reviewing the plots for the three models I noted that:
 
--   There is very little uncertainty associated with the co-efficents of the two predictor variables.
+-   In all the models there is very little uncertainty associated with the co-efficents of the predictor variable/s.
 
--   So, the uncertainty around the model parameter is effectively restricted to the value of the intercept of the regression line.
+-   So, the uncertainty around the parameterisation of each model is effectively restricted to uncertainty around the value of the intercept of the regression line.
 
 ```{r}
-# process posterior for interval plots
-posterior <- as.array(lm_3)
+# define a function for producing plots of model parameter uncertainty
+plot_coef_uncertainty_int <- function(mod, ...){
+  # process posterior for interval plots
+  posterior <- as.array(mod)
+  
+  # plot uncertainty around model parameters
+  mcmc_intervals(posterior, ...)
+}
 
-# plot uncertainty around model parameters
-mcmc_intervals(posterior, pars = c("(Intercept)", "log_gdp", 
-                                   "log_population"))
+# produce plots of model parameter uncertainty
+plot_coef_uncertainty_int(lm_1, pars = c("(Intercept)", "log_gdp")) +
+  labs(subtitle = "lm_1 (log_plastic_waste_tot ~ log_gdp)")
+
+plot_coef_uncertainty_int(lm_2, pars = c("(Intercept)", "log_population")) +
+  labs(subtitle = "lm_2 (log_plastic_waste_tot ~ log_population)")
+
+plot_coef_uncertainty_int(lm_3, pars = c("(Intercept)", "log_gdp", 
+                                     "log_population")) +
+  labs(subtitle = "lm_3 (log_plastic_waste_tot ~ log_gdp + log_population)")
 ```
 
-### Reviewing the residuals
+## Reviewing the residuals
 
 Looking at the residuals for each of the three models (see below) a similar pattern is present. As the amount of plastic waste produced by a country grows so do the residuals. In all three models the residuals diverge from 0 from predictions of approximately 0.5 million tonnes of plastic per year upwards. This suggest that for countries producing larger amounts of plastic the models are
 
 ```{r}
+# set theme again as seemed to be getting forgetten for some reason
+theme_set(theme_light())
 
+# calculate residuals
 residuals <- waste_vs_gdp_mod %>% 
   mutate(pred_lm_1 = exp(predict(lm_1)),
          pred_lm_2 = exp(predict(lm_2)),
@@ -410,6 +409,7 @@ residuals <- waste_vs_gdp_mod %>%
          resid_lm_2 = plastic_waste_tot - pred_lm_2,
          resid_lm_3 = plastic_waste_tot - pred_lm_3)
 
+# define residual plotting functions
 plot_residuals <- function(data, x, y, ...){
   ggplot(residuals,
          aes({{x}}, {{y}})) +
@@ -420,40 +420,48 @@ plot_residuals <- function(data, x, y, ...){
     labs(y = "Residual\n(Tonnes of plastic waster per year)")
 }
 
+
 plot_residuals(residuals, pred_lm_1, resid_lm_1) +
-  labs(x = "predicted value\nlm_1 (log_plastic_waste_tot ~ log_gdp)")
+  labs(x = "predicted value",
+       subtitle = "lm_1 (log_plastic_waste_tot ~ log_gdp)")
 
 plot_residuals(residuals, pred_lm_2, resid_lm_2) +
-  labs(x = "predicted value\nlm_1 (log_plastic_waste_tot ~ log_population)")
+  labs(x = "predicted value",
+       subtitle = "lm_2 (log_plastic_waste_tot ~ log_population)")
 
 plot_residuals(residuals, pred_lm_3, resid_lm_3) +
-  labs(x = "predicted value\nlm_1 (log_plastic_waste_tot ~ log_gdp + log_population)")
+  labs(x = "predicted value",
+       subtitle = "lm_3 (log_plastic_waste_tot ~ log_gdp + log_population)")
 ```
 
 I was wondering if the trend above would remain if I plotted the residuals as a proportion of the observed value (see below). This allowed me to get a sense of the errors in the models accounting for the wide variation in the amounts of plastic waste produced by the countries in the dataset (ranging from below 1000 tonnes per year to over 10 million tonnes). There is some indication in the plots below that all three of the models perform better for countries producing small amounts of plastic waste and worse for countries producing large amounts. However, the trend is less pronounced than in the plots of the raw residuals.
 
 ```{r}
+#define a function for plotting residuals as a proportion of observed values
 plot_residuals_perc <- function(data, x, y, ...){
   ggplot(residuals,
          aes({{x}}, {{y}} / plastic_waste_tot)) +
     geom_hline(yintercept = 0, colour = "grey50") +
     geom_point() +
     scale_x_log10(labels = scales::comma) +
-    #coord_cartesian(ylim = c(-4.25e7, 4.25e7)) +
     labs(y = "Residual / observed value")
 }
 
+# plot residuals as a proportion of observed values
 plot_residuals_perc(residuals, pred_lm_1, resid_lm_1) +
-  labs(x = "predicted value\nlm_1 (log_plastic_waste_tot ~ log_gdp)")
+  labs(x = "predicted value",
+       subtitle = "lm_1 (log_plastic_waste_tot ~ log_gdp)")
 
 plot_residuals_perc(residuals, pred_lm_2, resid_lm_2) +
-  labs(x = "predicted value\nlm_1 (log_plastic_waste_tot ~ log_population)")
+  labs(x = "predicted value",
+       subtitle = "lm_1 (log_plastic_waste_tot ~ log_population)")
 
 plot_residuals_perc(residuals, pred_lm_3, resid_lm_3) +
-  labs(x = "predicted value\nlm_1 (log_plastic_waste_tot ~ log_gdp + log_population)")
+  labs(x = "predicted value",
+       subtitle = "lm_1 (log_plastic_waste_tot ~ log_gdp + log_population)")
 ```
 
-### Bayesian R squared
+## Bayesian R squared
 
 Next I took a look at the R^2^ values for each of three models. Just to note as this is a Bayesian regression analysis, the calculation of R^2^ is slight different from the standard (frequentist) calculation. Bayesian R^2^ is defined as:
 
@@ -501,7 +509,7 @@ plot_bayes_r2(lm_3) +
 
 ```
 
-### Cross validation and log scores
+## Cross validation and log scores
 
 To assess the likely relative performance of the three models on out-of-sample data I ran LOO (leave-one-out) cross-validation for each model. The accuracy of the each models predictions across the cross validations was compared using log scores. The output of the log score comparison (see below) shows that model 3 (including `gdp` and `population` as predictors) offered the best performance. With model 1 (only `gdp` as a predictor) offering the worst performance of the three models. The relative performance of the models in cross validation is the same could be see above when considering the residual standard deviation and R^2^ values for each model. So, we can be relatively confident that model 3 is the best performing of the three simple models.
 
@@ -517,7 +525,9 @@ loo_compare(loo_1, loo_2, loo_3)
 
 ```
 
-### Graphical posterior predictive checks
+## Graphical posterior predictive checks
+
+Focusing now just on the model that performed best in the leave-one-out cross-validation tests above (model 3 - which includes the two predictors `gdp` and `population`). I completed some basic graphical posterior predictive checks. The idea behind these checks is that a model that is performing reasonable well should be able to produce data with a distribution that reasonably closely resembles the distribution of the observed (i.e. in-sample data).
 
 The plot below shows the density estimate for observed values of (log) total annual plastic waste in dark blue (labeled as y). Also shown (in light blue) are density estimates for predicted values of (log) total annual plastic waste. 75 randomly selected draws from the posterior distribution of regression coefficients (labeled as y~rep~) are shown to give a sense of the uncertainty in the model predictions.
 
@@ -540,7 +550,8 @@ ppc_dens_overlay(y,
                  y_rep[sample(nrow(y_rep), size = 75),]) +
   
   labs(x = "Log total annual plastic waste",
-       y = "Density estimate")
+       y = "Density estimate",
+       subtitle = "Observed data: y (dark blue)\nModel prediction: y_rep (light blue)")
 ```
 
 To understand in a little more details how the model is performing I looked at three test statistics (the median, maximum and minimum values). For each statistic the observed value (shown as a single vertical line, labeled T(y)) is overlaid on a histogram showing the predicted values produced by a sample of draws from the posterior predictive. Reviewing the three plots for the three test statistics I noted:
@@ -554,7 +565,8 @@ To understand in a little more details how the model is performing I looked at t
 test_stat_labs <- function(){
   
   list(labs(x = "Log(total annual plastic waste)",
-            y = "Number of draws from posterior\npredictive distriubtion"))
+            y = "Number of draws from posterior\npredictive distriubtion",
+            subtitle = "Observed data: y (dark blue)\nModel prediction: y_rep (light blue)"))
 }
 
 # define functions for test statistics
@@ -575,7 +587,7 @@ ppc_stat(y, y_rep, stat = min_value) +
 
 ```
 
-### Summary
+## Summary of the model fitting process
 
 I think the key points to draw out of analysis of the model fit presented above are as follows.
 
@@ -589,15 +601,19 @@ I think the key points to draw out of analysis of the model fit presented above 
 
 -   Graphical posterior predictive checks for the two predictor model showed a tendency for the model make predictions with higher narrower peak than the observed data.
 
-## Applying the model
+# Applying the model to new data
 
-The regression model for predicting the annual amount of plastic waste produced by country (based on its GDP and population) developed above considered a single year of observed data (2010). This was because it was the only year for which data was available for the outcome variable (annual amount of plastic waste) and the predictor variables (GDP and population). However, within the dataset there is data available for the predictors for the period 2011 to 2013 (inclusive). So, I thought it would be interesting to apply the model over this period to (retrospectively) predict the total global production. Before doing so, I need to return to the original data and process it to be used in this prediction exercise.
+The regression model for predicting the annual amount of plastic waste produced by country (based on its GDP and population) developed above considered a single year of observed data (2010). This was because it was the only year for which data was available for the outcome variable (annual amount of plastic waste) and the predictor variables (GDP and population). However, within the dataset there is data available for the predictors for the period 2011 to 2013 (inclusive). So, I thought it would be interesting to apply the model over this period to (retrospectively) predict the total global production.
+
+Before doing so, I need to return to the original data and process it to be used in this prediction exercise. Due to gaps in the `gdp` and `population` data, I decided just to focus on just the four highest plastic waste producing countries in 2010.
 
 ```{r}
-# identify the top 10 waste producers in 2010
+# identify the top n waste producers in 2010
 top_waste_2010 <- waste_vs_gdp_mod %>% 
   slice_max(order_by = plastic_waste_tot,
-            n = 4) %>% 
+            n = 4)
+
+top_waste_2010_countries <- top_waste_2010 %>% 
   select(country) %>% 
   pull()
 
@@ -605,57 +621,58 @@ top_waste_2010 <- waste_vs_gdp_mod %>%
 # data for both predictors is available
 pred_plastic_waste <- waste_vs_gdp %>%
   filter(year > 2010,
-         country %in% top_waste_2010) %>%
+         country %in% top_waste_2010_countries) %>%
   mutate(gdp = gdp_per_cap * population,
          log_gdp = log(gdp),
          log_population = log(population)) %>% 
   filter(!is.na(gdp)) %>% 
   select(-plastic_waste_per_cap)
+  
+```
 
+Then I used the model to predict annual plastic waste production for these four countries for 2011-2013.
+
+```{r}
 # calculate the median prediction from the posterior predictive distribution
 preds <- posterior_predict(lm_3, newdata = pred_plastic_waste) 
+```
 
-median_preds <- preds %>% 
-  as_tibble() %>% 
-  summarise(across(everything(), median)) %>% 
-  pivot_longer(cols = everything(), values_to = "median_pred")
+A little more data wrangling is need to get everything into shape for plotting.
 
-# sample n predictions from posterior predictive distribution
-draws <- preds %>% 
-  t() %>% 
-  as_tibble()
-
-sampled_preds <- draws[, sample(ncol(draws), 50)]
-
+```{r}
 # process predictions for plotting
-waste_by_year_country <- pred_plastic_waste %>% 
-  bind_cols(median_preds, sampled_preds) %>%
-  group_by(year, country) %>% 
-  summarise(across(median_pred:last_col(), sum)) 
+plotting_df <- pred_plastic_waste %>% 
+  bind_cols(as_tibble(t(preds))) %>% 
+  pivot_longer(cols = V1:last_col(), names_to = "draw_num", values_to = "pred") 
+```
 
-waste_by_year_country_med <- waste_by_year_country %>% 
-  select(-starts_with("V"))
+Finally, I can plot the predictions of the model for 2011-2013 for the four of the top waste producing countries. These are shown as combined violin and boxplots showing the distributions of predicted annual plastic waste production draw from posterior predictive. The central line of the boxplots shows the median which can be taken as a point estimate of the model's prediction. The blue points show the observed value of annual plastic waste production calculated from the original dataset.
 
-waste_by_year_country_draws <- waste_by_year_country %>% 
-  select(-median_pred) %>%
-  pivot_longer(starts_with("V"), names_to = "variable", values_to = "value") 
+In terms of the validity of the model predictions two points jump out when reviewing the plot.
+
+-   Considering the median prediction the model shows the expected trend over 2011-2013 for each country, with a small steady rise in plastic production.
+
+-   However, comparing the observed data (i.e. the blue point) with the prediction shows the model is systematically underestimating the amounts of plastic waste produced in each country. In retrospect, this issue could have been anticipated as the analysis of the model residuals (see above) showed a strong tendency for the model to underestimate growing as the scale of plastic waste production grows.
+
+```{r}
 
 # produce plot
-ggplot(waste_by_year_country_med) +
+plotting_df %>%
   
-  geom_line(aes(year, exp(median_pred)), 
-            size = 3, colour = "red"
-           ) +
+  ggplot(mapping = aes(x = year, y = exp(pred),
+             group = year)) +
   
-  geom_line(data = waste_by_year_country_draws,
-            mapping = aes(year, exp(value), group = variable), alpha = 0.3) +
+  geom_violin(fill = "grey70", colour = NA) +
+  geom_boxplot(alpha = 0, width = 0.1) +
+  geom_point(data = top_waste_2010,
+             mapping = aes(x = year, y = plastic_waste_tot),
+             size = 2, colour = "blue") +
   
-  scale_x_continuous(breaks = c(2011, 2012, 2013)) +
-  scale_y_continuous(labels = scales::label_number_si(accuracy=0.1)) +
+  scale_y_log10(labels = scales::label_number_si(accuracy=0.1)) +
+  
+  facet_wrap(~ factor(country, levels = c("China", "United States", "Germany",       "Brazil")),  scales = "free_y") +
   
   labs(x = NULL,
-       y = "Predicted annual plastic waste production\n") +
-  
-  facet_wrap(~country, scales = "free_y") 
+       y = "Predicted annual plastic waste production (tonnes)\n")
   
 ```
